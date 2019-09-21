@@ -1,0 +1,402 @@
+#####METADATA#####
+#
+
+#####call libraries and functions#####
+########################################################################
+
+library(nlme)
+library(MuMIn)
+library(ggplot2)
+library(ggpubr)
+library(lsmeans)
+
+diagnostics<- function(x,print=TRUE){
+  plot(x) #using Cook's distance to check for outliers
+  hist(x$residuals,breaks=3) #to check for normalcy
+  a<-coef(x)#to get model coefficients
+  b<-summary(x)#to get coefficients and stats
+  c<-AIC(x)#self-explanatory
+  d<-r.squaredGLMM(x)#r2 values for lme models only!  Use r2 stats from summary for lm models. 
+  output<-list(a,b,c,d)
+  return(output)
+}
+ctrl<-lmeControl(opt='optim')#ctrl not implemented, just in case.
+options(na.action=na.fail)
+
+#####define habitat quality when species partition resources along a gradient#####
+########################################################################
+
+setwd("~/Documents/MATLAB/simulation/landscapes")
+bp<-read.csv('breakpoints.csv',header=FALSE,sep=',') #where species curves 
+            #intersect. i.e. defines the range of abiotic conditions for which 
+            #species x performs better than any other species.
+#np<-read.csv('np.csv',header=FALSE,sep=',') #niche optima for each species
+
+
+#####get abiotic predictors#####
+########################################################################
+
+setwd("~/Documents/MATLAB/simulation_2018-2019")
+smallpred<-read.csv('smallpred.csv',header = TRUE,sep=',')
+largepred<-read.csv('largepred.csv',header = TRUE,sep = ',')
+bysps<-c('annual-edge','perennial-int','annual-int','perennial-edge')
+colors<-c('lightblue','black','blue','slategrey')
+habitats = 0 #not working when set to 1....
+plotit<-0
+
+models<-c('neutRdiffGneutC','neutRneutGdiffC')#c('neutRdiffGneutC','neutRneutGdiffC','neutRneutGneutC','neutRdiffGdiffC','neutRdiffG#diffC')#,'neutRdiffGneutC','neutRneutGdiffC','neutRdiffGdiffC','neutRdiffG#diffC')
+#c('neutRdiffG#diffC') #c('neutRdiffGneutC','neutRneutGdiffC','neutRneutGneutC')#,'neutRdiffGneutC','neutRneutGdiffC','neutRdiffGdiffC','neutRdiffG#diffC')
+ddstrength<-c('_0_5','_1_0','_1_5')
+dispersal<-c('adj','int','uni')#'adj','int','uni')
+#dd<-c('dd=_1','dd=_9','dd=1_1','dd=1_9')#
+#alpha<-c('alpha = _1','alpha = _9','alpha = 1_1','alpha = 1_9')#
+lme_ab_coefs<-matrix(NA,ncol=8,nrow = length(models)*9,byrow=TRUE)
+lme_comp_coefs<-matrix(NA,ncol=8,nrow = length(models)*9,byrow=TRUE)
+cov_coefs<-matrix(NA,ncol=8,nrow = length(models)*9,byrow=TRUE)
+
+#YOU NEED TO ADD S~FIT TO THIS CODE SOMEWHERE
+
+#g_all_small<-list()
+#g_all_large<-list()
+#for(a in 1:length(alpha)){#length(alpha)){
+if(plotit==1){
+par(mfrow=c(2,2),
+    mai=c(0.5,0.5,0.5,0.5))
+}
+for(d in 1:length(dispersal)){
+for(s in 1:length(ddstrength)){
+for(m in 1:length(models)){
+  if(d==1&s==1&m==1){
+    count=1
+  }
+#setwd(paste('~/Documents/MATLAB/simulation2019Jan/neutral/',dispersal[d],'/',ddstrength[s],'/',models[m],sep=''))
+setwd(paste('~/Documents/submissions/Ecology2019/uncorrelatedforspatialstats_editedsumm2019/neutral/',dispersal[d],'/',ddstrength[s],'/',models[m],sep=''))
+results_small<-read.csv(paste('results_small.csv',sep=''), header = TRUE, sep = ',')
+results_large<-read.csv(paste('results_large.csv',sep=''), header = TRUE, sep = ',')
+
+results_small<-cbind(smallpred,results_small)
+results_large<-cbind(largepred,results_large)
+
+
+for(i in 1:20){
+  results_small$hab[results_small$landscape==i]<-unlist(lapply(results_small$meanC[results_small$landscape==i],function(x) 
+    if(x<=bp[i,1]){'annual-edge'}else if(x>bp[i,1]&x<=bp[i,2])
+    {'perennial-int'}else if(x>bp[i,2]&x<=bp[i,3]){'annual-int'}
+    else{'perennial-edge'}))}
+
+
+#results_small<-results_small[results_small$landscape != 7 & results_small$landscape != 14 & results_small$landscape != 16,]
+#results_large<-results_large[results_large$landscape != 7 & results_large$landscape != 14 & results_large$landscape != 16,]
+if(habitats == 1){
+for(sps in 1:length(bysps)){
+  results<-results_small[results_small$hab == bysps[sps],]
+  
+  lme_ab<-lme(fit~varC,~varC|landscape,data=results,control=ctrl,na.action=na.omit)
+  #diagnostics(lme_ab)
+  if(plotit==1){
+  plot(fit~varC,data=results,cex=.7,main=paste(models[m],',',ddstrength[s],',',dispersal[d]),
+       xlab='abiotic heterogeneity',ylab='species richness (# sps/subplot)',ylim=c(0,4))
+  for(i in 1:20){abline(coef(lme_ab)[i,1],coef(lme_ab)[i,2],col=colors[sps])}
+  abline(summary(lme_ab)$coefficients$fixed[1],
+         summary(lme_ab)$coefficients$fixed[2],col='red',lwd=3)
+  }
+  
+  lme_comp<-lme(fit~comphet,~comphet|landscape,data=results,control=ctrl,na.action=na.omit)
+  #diagnostics(lme_comp)
+  if(plotit==1){
+  plot(fit~comphet,data=results,cex=.7,main=paste(models[m],',',ddstrength[s],',',dispersal[d]),
+       xlab='competitive heterogeneity',ylab='species richness (# sps/subplot)',ylim=c(0,4))
+  for(i in 1:20){abline(coef(lme_comp)[i,1],coef(lme_comp)[i,2],col=colors[sps])}
+  abline(summary(lme_comp)$coefficients$fixed[1],
+         summary(lme_comp)$coefficients$fixed[2],col='red',lwd=3)
+  }
+  cov<-lme(sqrt(comphet)~varC,~varC|landscape,data=results,control=ctrl,na.action=na.omit)
+  #diagnostics(cov)
+  if(plotit==1){
+  plot(sqrt(comphet)~varC,data=results,cex=.7,main=paste(models[m],',',ddstrength[s],',',dispersal[d]),
+       xlab='abiotic heterogeneity',ylab='competitive heterogeneity',axes=FALSE)
+  axis(1,at=c(0,.5,1,1.5,2,2.5,3),labels=c(0,.5,1,1.5,2,2.5,3),cex.axis=1)
+  axis(2,at=c(0,.1,.2,.3,.4,.5,.6,.7),labels=round((c(0,.1,.2,.3,.4,.5,.6,.7))^2,2),cex.axis=1)
+  box()
+  for(i in 1:20){abline(coef(cov)[i,1],coef(cov)[i,2],col=colors[sps])}
+  abline(summary(cov)$coefficients$fixed[1],
+         summary(cov)$coefficients$fixed[2],col='red',lwd=3)}}
+  
+  
+  
+  }else{
+    
+lme_ab<-lme(S~varC,~varC|landscape/hab,data=results_small,control=ctrl,na.action=na.omit)
+#diagnostics(lme_ab)
+#pull coefficients:
+ae<-grep('/annual-edge',rownames(coef(lme_ab)),fixed=TRUE)
+pi<-grep('/perennial-int',rownames(coef(lme_ab)),fixed=TRUE)
+ai<-grep('/annual-int',rownames(coef(lme_ab)),fixed=TRUE)
+pe<-grep('/perennial-edge',rownames(coef(lme_ab)),fixed=TRUE)
+
+ab_fixed<-round(lme_ab$coefficients$fixed[2],2)
+ab_ae<-round(mean(coef(lme_ab)[c(ae),2]),4)
+ab_ai<-round(mean(coef(lme_ab)[c(ai),2]),4)
+ab_pe<-round(mean(coef(lme_ab)[c(pe),2]),4)
+ab_pi<-round(mean(coef(lme_ab)[c(pi),2]),4)
+lme_ab_coefs[count,]<-c(ab_fixed,ab_ae,ab_pi,ab_ai,ab_pe,paste(dispersal[d]),paste(ddstrength[s]),paste(models[m]))
+
+if(plotit==1){
+plot(S~varC,data=results_small,cex=.7,main=paste(models[m],',',ddstrength[s],',',dispersal[d]),
+     xlab='abiotic heterogeneity',ylab='species richness (# sps/subplot)',ylim=c(0,4))
+for(i in c(ae)){abline(coef(lme_ab)[i,1],coef(lme_ab)[i,2],col='lightblue')}
+for(i in c(ai)){abline(coef(lme_ab)[i,1],coef(lme_ab)[i,2],col='blue')}
+for(i in c(pe)){abline(coef(lme_ab)[i,1],coef(lme_ab)[i,2],col='slategrey')}
+for(i in c(pi)){abline(coef(lme_ab)[i,1],coef(lme_ab)[i,2],col='black')}
+abline(summary(lme_ab)$coefficients$fixed[1],
+       summary(lme_ab)$coefficients$fixed[2],col='red',lwd=3)
+}
+
+lme_comp<-lme(S~comphet,~comphet|landscape/hab,data=results_small,control=ctrl,na.action=na.omit)
+#diagnostics(lme_comp)
+#pull coefficients
+ae<-grep('/annual-edge',rownames(coef(lme_comp)),fixed=TRUE)
+pi<-grep('/perennial-int',rownames(coef(lme_comp)),fixed=TRUE)
+ai<-grep('/annual-int',rownames(coef(lme_comp)),fixed=TRUE)
+pe<-grep('/perennial-edge',rownames(coef(lme_comp)),fixed=TRUE)
+
+comp_fixed<-round(lme_comp$coefficients$fixed[2],2)
+comp_ae<-round(mean(coef(lme_comp)[c(ae),2]),4)
+comp_ai<-round(mean(coef(lme_comp)[c(ai),2]),4)
+comp_pe<-round(mean(coef(lme_comp)[c(pe),2]),4)
+comp_pi<-round(mean(coef(lme_comp)[c(pi),2]),4)
+lme_comp_coefs[count,]<-c(comp_fixed,comp_ae,comp_pi,comp_ai,comp_pe,paste(dispersal[d]),paste(ddstrength[s]),paste(models[m]))
+
+if(plotit==1){
+plot(S~comphet,data=results_small,cex=.7,main=paste(models[m],',',ddstrength[s],',',dispersal[d]),
+     xlab='competitive heterogeneity',ylab='species richness (# sps/subplot)',ylim=c(0,4))
+for(i in c(ae)){abline(coef(lme_comp)[i,1],coef(lme_comp)[i,2],col='lightblue')}
+for(i in c(ai)){abline(coef(lme_comp)[i,1],coef(lme_comp)[i,2],col='blue')}
+for(i in c(pe)){abline(coef(lme_comp)[i,1],coef(lme_comp)[i,2],col='slategrey')}
+for(i in c(pi)){abline(coef(lme_comp)[i,1],coef(lme_comp)[i,2],col='black')}
+abline(summary(lme_comp)$coefficients$fixed[1],
+       summary(lme_comp)$coefficients$fixed[2],col='red',lwd=3)
+}
+
+cov<-lme(sqrt(comphet)~varC,~varC|landscape/hab,data=results_small,control=ctrl,na.action=na.omit)
+#diagnostics(cov)
+#pull coefficients
+ae<-grep('/annual-edge',rownames(coef(cov)),fixed=TRUE)
+pi<-grep('/perennial-int',rownames(coef(cov)),fixed=TRUE)
+ai<-grep('/annual-int',rownames(coef(cov)),fixed=TRUE)
+pe<-grep('/perennial-edge',rownames(coef(cov)),fixed=TRUE)
+
+cov_fixed<-round(cov$coefficients$fixed[2],2)
+cov_ae<-round(mean(coef(cov)[c(ae),2]),4)
+cov_ai<-round(mean(coef(cov)[c(ai),2]),4)
+cov_pe<-round(mean(coef(cov)[c(pe),2]),4)
+cov_pi<-round(mean(coef(cov)[c(pi),2]),4)
+cov_coefs[count,]<-c(cov_fixed,cov_ae,cov_pi,cov_ai,cov_pe,paste(dispersal[d]),paste(ddstrength[s]),paste(models[m]))
+
+if(plotit==1){
+plot(sqrt(comphet)~varC,data=results_small,cex=.7,main=paste(models[m],',',ddstrength[s],',',dispersal[d]),
+     xlab='abiotic heterogeneity',ylab='competitive heterogeneity',axes=FALSE)
+axis(1,at=c(0,.5,1,1.5,2,2.5,3),labels=c(0,.5,1,1.5,2,2.5,3),cex.axis=1)
+axis(2,at=c(sqrt(min(!is.na(results_small$comphet))), sqrt(max(!is.na(results_small$comphet)))),labels=round(c(min(results_small$comphet), max(results_small$comphet))^2,2),cex.axis=1)
+box()
+for(i in c(ae)){abline(coef(cov)[i,1],coef(cov)[i,2],col='lightblue')}
+for(i in c(ai)){abline(coef(cov)[i,1],coef(cov)[i,2],col='blue')}
+for(i in c(pe)){abline(coef(cov)[i,1],coef(cov)[i,2],col='slategrey')}
+for(i in c(pi)){abline(coef(cov)[i,1],coef(cov)[i,2],col='black')}
+abline(summary(cov)$coefficients$fixed[1],
+       summary(cov)$coefficients$fixed[2],col='red',lwd=3)
+}
+  }
+count = count+1
+}
+}
+}
+colnames(lme_ab_coefs)<-c('fixed','ae','pi','ai','pe','dispersal','ddstrength','model')
+colnames(lme_comp_coefs)<-c('fixed','ae','pi','ai','pe','dispersal','ddstrength','model')
+colnames(cov_coefs)<-c('fixed','ae','pi','ai','pe','dispersal','ddstrength','model')
+abhet<-as.data.frame(lme_ab_coefs)
+comphet<-as.data.frame(lme_comp_coefs)
+abcomp_cov<-as.data.frame(cov_coefs)
+
+#COMPARE JUST EF AND AMC MODELS:
+#data<-as.numeric(rownames(abhet[as.character(abhet$model)=='neutRneutGdiffC' | as.character(abhet$model)=='neutRdiffGneutC',]))
+
+#building models with other categorical predictors
+#abhetvecF<-abs(as.numeric(as.character(abhet$fixed)))[data]
+#comphetvecF<-abs(as.numeric(as.character(comphet$fixed)))[data]
+#abcompvecF<-abs(as.numeric(as.character(abcomp_cov$fixed)))[data]
+#dispersalvec<-as.factor(as.character(abcomp_cov$dispersal))[data]
+#ddstrengthvec<-as.factor(as.character(abcomp_cov$ddstrength))[data]
+#modelvec<-as.factor(as.character(abcomp_cov$model))[data]
+
+#fix your output:
+hdrdata<-matrix(abs(as.numeric(matrix(unlist(abhet[,1:5]),ncol=5,nrow=length(models)*9,byrow=FALSE))),ncol=5,nrow=length(models)*9,byrow=FALSE)
+disp<-as.factor(as.character(abcomp_cov$dispersal))
+dd<-as.factor(as.character(abcomp_cov$ddstrength))
+mods<-as.factor(as.character(abcomp_cov$model))
+scompdata<-matrix(abs(as.numeric(matrix(unlist(comphet[,1:5]),ncol=5,nrow=length(models)*9,byrow=FALSE))),ncol=5,nrow=length(models)*9,byrow=FALSE)
+covdata<-matrix(abs(as.numeric(matrix(unlist(abcomp_cov[,1:5]),ncol=5,nrow=length(models)*9,byrow=FALSE))),ncol=5,nrow=length(models)*9,byrow=FALSE)
+alldat<-data.frame(hdrdata,scompdata,covdata,disp,dd,mods)
+colnames(alldat)<-c('fixedHDR','aeHDR','piHDR','aiHDR','peHDR','fixedCDR','aeCDR','piCDR','aiCDR','peCDR','fixedCOV','aeCOV','piCOV','aiCOV','peCOV','disp','dd','mods')
+
+#FIGURE 1: comparing only EF to AMC.
+
+#RELATIONSHIP 1: When do we observe a relationship between abiotic heterogeneity and 
+#species richness (an abiotic HDR)?
+
+#Figures_1a
+compare_means(fixedHDR~mods,data=alldat)
+my_comparisons <- list( c("neutRdiffGneutC","neutRneutGdiffC"))
+
+q1mods<-ggplot(data = alldat, aes(x=mods, y=fixedHDR)) + 
+  geom_boxplot(aes(fill = mods))+scale_fill_manual(values = c('blue','red'))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = , r = 20, b = 0, l = 0),size=24,face="bold",colour='darkgrey'),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+scale_x_discrete(breaks=c("neutRdiffGneutC","neutRneutGdiffC"),
+                                                                labels=c("EF","AMC"))+labs(x = 'community assembly mechanism', y = expression(paste('HDR'[A]," (|", beta[SA], "|)")))
+q1mods+ stat_compare_means(comparisons = my_comparisons) # Add pairwise comparisons p-value
+
+#Figures_1b
+compare_means(fixedHDR~disp,data=alldat)
+#all ns
+q1d<-ggplot(data = alldat, aes(x=disp, y=fixedHDR)) + 
+  geom_boxplot()+labs(x = 'dispersal distance', y = expression(paste('HDR'[A]," (|", beta[SA], "|)")))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = 0, r = 20, b = 0, l = 0),size=24,face="bold"),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+scale_x_discrete(breaks=c("adj","int","uni"),
+                                                                labels=c("adjacent","intermediate","universal"))
+q1d
+#sig<-aov(fixedHDR~mods,data=alldat)
+#pairs(lsmeans(sig,~mods))
+#legend('bottomright',legend=c('n.s.'),bty='n')
+
+#Figures_1c
+compare_means(fixedHDR~dd,data=alldat)
+#all ns
+q1dd<-ggplot(data = alldat, aes(x=dd, y=fixedHDR)) + 
+  geom_boxplot()+labs(x = expression(alpha[ij]), y = expression(paste('HDR'[A]," (|", beta[SA], "|)")))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = 0, r = 20, b = 0, l = 0),size=24,face="bold"),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+
+  scale_x_discrete(breaks=c("_0_5","_1_0","_1_5"),labels=c(expression(paste('< ', alpha[ii])),expression(paste('= ', alpha[ii])),expression(paste('> ', alpha[ii]))))
+q1dd
+
+#RELATIONSHIP 2: When does the competitive environment shape species richness?
+#Figures_1d
+compare_means(fixedCDR~mods,data=alldat)
+#ns
+q2mods<-ggplot(data = alldat, aes(x=mods, y=fixedCDR)) + 
+  geom_boxplot(aes(fill=mods))+scale_fill_manual(values=c('blue','red'))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = , r = 20, b = 0, l = 0),size=24,face="bold",colour='darkturquoise'),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+scale_x_discrete(breaks=c("neutRdiffGneutC","neutRneutGdiffC"),
+                                                                labels=c("EF","AMC"))+labs(x = 'community assembly mechanism', y = expression(paste('HDR'[C]," (|", beta[SC], "|)")))
+q2mods
+
+#Figures_1e
+compare_means(fixedCDR~disp,data=alldat)
+#all ns
+q2d<-ggplot(data = alldat, aes(x=disp, y=fixedCDR)) + 
+  geom_boxplot()+labs(x = 'dispersal distance', y = expression(paste('HDR'[C]," (|", beta[SC], "|)")))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = 0, r = 20, b = 0, l = 0),size=24,face="bold"),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+scale_x_discrete(breaks=c("adj","int","uni"),
+                                                                labels=c("adjacent","intermediate","universal"))
+q2d
+#sig<-aov(fixedHDR~mods,data=alldat)
+#pairs(lsmeans(sig,~mods))
+#legend('bottomright',legend=c('n.s.'),bty='n')
+
+#Figures_1f
+compare_means(fixedCDR~dd,data=alldat)
+#all ns
+q2dd<-ggplot(data = alldat, aes(x=dd, y=fixedCDR)) + 
+  geom_boxplot()+labs(x = expression(alpha[ij]), y = expression(paste('HDR'[C]," (|", beta[SC], "|)")))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = 0, r = 20, b = 0, l = 0),size=24,face="bold"),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+
+  scale_x_discrete(breaks=c("_0_5","_1_0","_1_5"),labels=c(expression(paste('< ', alpha[ii])),expression(paste('= ', alpha[ii])),expression(paste('> ', alpha[ii]))))
+q2dd
+
+#RELATIONSHIP 3: When does the abiotic heterogeneity shape the competitive environment?
+#Figures_1g
+compare_means(fixedCOV~mods,data=alldat)
+my_comparisons <- list( c("neutRdiffGneutC","neutRneutGdiffC"))
+
+q3mods<-ggplot(data = alldat, aes(x=mods, y=fixedCOV)) + 
+  geom_boxplot(aes(color=mods))+scale_color_manual(values=c('blue','red'))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = , r = 20, b = 0, l = 0),size=24,face="bold",colour='goldenrod1'),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+scale_x_discrete(breaks=c("neutRdiffGneutC","neutRneutGdiffC"),
+                                                                labels=c("EF","AMC"))+labs(x = 'community assembly mechanism', y = expression(paste('AC'[H]," (|", beta[AC], "|)")))
+q3mods+ stat_compare_means(comparisons = my_comparisons) # Add pairwise comparisons p-value
+
+#Figures_1h
+compare_means(fixedCOV~disp,data=alldat)
+#all ns
+q3d<-ggplot(data = alldat, aes(x=disp, y=fixedCOV)) + 
+  geom_boxplot()+labs(x = 'dispersal distance', y = expression(paste('AC'[H]," (|", beta[AC], "|)")))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = 0, r = 20, b = 0, l = 0),size=24,face="bold"),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+scale_x_discrete(breaks=c("adj","int","uni"),
+                                                                labels=c("adjacent","intermediate","universal"))
+q3d
+#sig<-aov(fixedHDR~mods,data=alldat)
+#pairs(lsmeans(sig,~mods))
+#legend('bottomright',legend=c('n.s.'),bty='n')
+
+#Figures_1i
+compare_means(fixedCOV~dd,data=alldat)
+#all ns
+q3dd<-ggplot(data = alldat, aes(x=dd, y=fixedCOV)) + 
+  geom_boxplot()+labs(x = expression(alpha[ij]), y = expression(paste('AC'[H]," (|", beta[AC], "|)")))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        legend.position = "none",
+        axis.title.x=element_text(margin = margin(t = 20, r = 0, b = 0, l = 0),size=16,face="bold"),
+        axis.title.y=element_text(margin = margin(t = 0, r = 20, b = 0, l = 0),size=24,face="bold"),
+        axis.text.x = element_text(color = "black", 
+                                   size = 14),
+        axis.text.y = element_text(color = "black", 
+                                   size = 14))+
+  scale_x_discrete(breaks=c("_0_5","_1_0","_1_5"),labels=c(expression(paste('< ', alpha[ii])),expression(paste('= ', alpha[ii])),expression(paste('> ', alpha[ii]))))
+q3dd
